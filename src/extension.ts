@@ -131,7 +131,10 @@ async function openLocationFromMessage(
   }
 
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(resolvedFile));
-  const editor = await vscode.window.showTextDocument(doc, { preview: false });
+  const editor = await vscode.window.showTextDocument(doc, {
+    viewColumn: vscode.ViewColumn.Beside,
+    preview: false,
+  });
 
   const line = Math.max(0, Number.isFinite(payload.line) ? Number(payload.line) - 1 : 0);
   const col = Math.max(0, Number.isFinite(payload.column) ? Number(payload.column) - 1 : 0);
