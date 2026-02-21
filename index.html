@@ -1,0 +1,1382 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Verilator XML Block Diagram Viewer</title>
+
+  <!-- D3 for layout + zoom/pan -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #111824;
+      --panel2: #0f1622;
+      --text: #e6edf3;
+      --muted: #9fb0c3;
+      --accent: #7cc4ff;
+      --accent2: #a3ffcc;
+      --danger: #ff7a7a;
+      --border: rgba(255,255,255,0.10);
+      --shadow: rgba(0,0,0,0.35);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 600px at 30% 0%, #142033, var(--bg));
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      height: 56px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(17,24,36,0.9), rgba(17,24,36,0.65));
+      backdrop-filter: blur(8px);
+    }
+    header .title {
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+    header .title .badge {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(124,196,255,0.10);
+      color: var(--accent);
+      font-family: var(--mono);
+    }
+    header .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 8px 18px var(--shadow);
+      transition: transform 0.08s ease, background 0.15s ease;
+      font-size: 13px;
+    }
+    .btn:hover { background: rgba(255,255,255,0.07); }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary {
+      background: rgba(124,196,255,0.16);
+      border-color: rgba(124,196,255,0.35);
+      color: #dff1ff;
+    }
+    .btn.primary:hover { background: rgba(124,196,255,0.22); }
+    .btn.danger {
+      background: rgba(255,122,122,0.12);
+      border-color: rgba(255,122,122,0.35);
+      color: #ffe3e3;
+    }
+
+    .input {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+      outline: none;
+      width: 260px;
+    }
+    .input::placeholder { color: rgba(159,176,195,0.75); }
+
+    main {
+      height: calc(100vh - 56px);
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 10px;
+      padding: 10px;
+    }
+    main.panel-hidden {
+      grid-template-columns: 1fr;
+    }
+    .left-panel {
+      display: flex;
+    }
+    main.panel-hidden .left-panel {
+      display: none;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(17,24,36,0.62);
+      box-shadow: 0 14px 30px var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .panel .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,22,34,0.75);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      cursor: pointer;
+      user-select: none;
+      color: var(--muted);
+    }
+    .tab.active {
+      color: var(--text);
+      border-color: rgba(124,196,255,0.45);
+      background: rgba(124,196,255,0.14);
+    }
+
+    .panel .panel-body {
+      padding: 10px 12px;
+      overflow: auto;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 6px 10px;
+      font-size: 12px;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+    .kv div:nth-child(odd) { color: var(--muted); font-family: var(--mono); }
+    .kv div:nth-child(even) { font-family: var(--mono); }
+
+    .section-title {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 14px 0 8px;
+      letter-spacing: 0.2px;
+      text-transform: uppercase;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: var(--mono);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    thead { background: rgba(124,196,255,0.10); }
+    th, td {
+      padding: 8px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { text-align: left; color: #dff1ff; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    pre {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      overflow: auto;
+      white-space: pre;
+    }
+
+    details {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.02);
+      margin-bottom: 8px;
+    }
+    details summary {
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #dff1ff;
+    }
+    .xml-node {
+      margin-top: 8px;
+      padding-left: 10px;
+      border-left: 1px dashed rgba(255,255,255,0.12);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* Diagram */
+    #diagramWrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
+      background: radial-gradient(900px 600px at 50% 0%, rgba(124,196,255,0.08), rgba(0,0,0,0));
+    }
+    #diagramPanelBody {
+      padding: 0;
+      display: flex;
+      overflow: hidden;
+      min-height: 0;
+    }
+    #diagramSvg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .node rect {
+      fill: rgba(255,255,255,0.03);
+      stroke: rgba(124,196,255,0.35);
+      stroke-width: 1.2;
+      rx: 10; ry: 10;
+    }
+    .node .title {
+      font-family: var(--sans);
+      fill: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .node .sub {
+      font-family: var(--mono);
+      fill: var(--muted);
+      font-size: 11px;
+    }
+    .port {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      fill: rgba(230,237,243,0.85);
+    }
+    .port.muted { fill: rgba(159,176,195,0.8); }
+
+    .link {
+      fill: none;
+      stroke: rgba(255,255,255,0.14);
+      stroke-width: 1.2;
+    }
+    .link.highlight {
+      stroke: rgba(163,255,204,0.55);
+      stroke-width: 2.0;
+    }
+
+    .overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(15,22,34,0.70);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 12px 26px var(--shadow);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .overlay strong { color: var(--text); font-family: var(--mono); font-weight: 700; }
+
+    .status {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+
+    .pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+    }
+    .pill.ok { color: var(--accent2); border-color: rgba(163,255,204,0.35); background: rgba(163,255,204,0.08); }
+    .pill.bad { color: var(--danger); border-color: rgba(255,122,122,0.35); background: rgba(255,122,122,0.08); }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .spacer { flex: 1; }
+    .small { font-size: 12px; color: var(--muted); }
+
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="title">
+      Verilator XML Viewer
+      <span class="badge">diagram + full XML</span>
+    </div>
+
+    <div class="controls">
+      <input id="fileInput" type="file" accept=".xml,application/xml,text/xml" style="display:none" />
+      <button class="btn primary" id="btnLoad">Upload Verilator XML</button>
+      <button class="btn" id="btnToggleInfoPanel">Show Panel</button>
+      <button class="btn" id="btnTogglePorts">Ports: Off</button>
+      <input class="input" id="searchInput" placeholder="Search instance/module/signal…" />
+      <button class="btn" id="btnFit">Fit</button>
+      <button class="btn" id="btnResetZoom">Reset zoom</button>
+    </div>
+  </header>
+
+  <main id="mainLayout" class="panel-hidden">
+    <!-- Left: Info panel -->
+    <section class="panel left-panel" id="leftPanel">
+      <div class="panel-header">
+        <div class="tabs">
+          <div class="tab active" data-tab="summary">Summary</div>
+          <div class="tab" data-tab="tables">Tables</div>
+          <div class="tab" data-tab="xmltree">XML Tree</div>
+        </div>
+        <div class="spacer"></div>
+        <div class="status" id="status">No file loaded</div>
+      </div>
+
+      <div class="panel-body" id="panelBody">
+        <!-- dynamic -->
+      </div>
+    </section>
+
+    <!-- Right: Diagram -->
+    <section class="panel">
+      <div class="panel-header">
+        <div class="row">
+          <span class="pill" id="pillLoaded">not loaded</span>
+          <span class="pill" id="pillNodes">nodes: 0</span>
+          <span class="pill" id="pillLinks">links: 0</span>
+          <span class="pill" id="pillPorts">ports: 0</span>
+          <span class="small">Scroll to zoom • Drag background to pan • Click node to inspect</span>
+        </div>
+      </div>
+      <div class="panel-body" id="diagramPanelBody">
+        <div id="diagramWrap">
+          <div class="overlay" id="overlayInfo">
+            <div>Selected: <strong id="selName">none</strong></div>
+            <div class="pill" id="selType">—</div>
+            <div class="pill" id="selPath">—</div>
+          </div>
+          <svg id="diagramSvg"></svg>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+/**
+ * Verilator XML Viewer
+ * - Parses Vtop.xml from `verilator --xml-only`
+ * - Builds hierarchy from <cells><cell hier="top.u_x.y" .../></cells>
+ * - Renders zoomable/pannable block diagram with D3
+ * - Displays full extracted info + raw XML + XML tree
+ */
+
+const state = {
+  rawXmlText: "",
+  xmlDoc: null,
+  parsed: null,     // extracted structure
+  selectedId: null,
+  activeTab: "summary",
+  showPorts: false,
+  showInfoPanel: false,
+};
+
+const els = {
+  mainLayout: document.getElementById("mainLayout"),
+  leftPanel: document.getElementById("leftPanel"),
+  fileInput: document.getElementById("fileInput"),
+  btnLoad: document.getElementById("btnLoad"),
+  btnToggleInfoPanel: document.getElementById("btnToggleInfoPanel"),
+  btnTogglePorts: document.getElementById("btnTogglePorts"),
+  btnFit: document.getElementById("btnFit"),
+  btnResetZoom: document.getElementById("btnResetZoom"),
+  searchInput: document.getElementById("searchInput"),
+  panelBody: document.getElementById("panelBody"),
+  status: document.getElementById("status"),
+  pillLoaded: document.getElementById("pillLoaded"),
+  pillNodes: document.getElementById("pillNodes"),
+  pillLinks: document.getElementById("pillLinks"),
+  pillPorts: document.getElementById("pillPorts"),
+  selName: document.getElementById("selName"),
+  selType: document.getElementById("selType"),
+  selPath: document.getElementById("selPath"),
+};
+
+// -------------------- Helpers --------------------
+
+function textContent(el) {
+  return el ? (el.textContent || "").trim() : "";
+}
+
+function attr(el, name, def="") {
+  return el ? (el.getAttribute(name) ?? def) : def;
+}
+
+function escapeHtml(s) {
+  return (s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function unique(arr) {
+  return Array.from(new Set(arr));
+}
+
+function by(obj, keyFn) {
+  const m = new Map();
+  for (const x of obj) {
+    const k = keyFn(x);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(x);
+  }
+  return m;
+}
+
+function isVerilatorSyntheticName(s) {
+  const v = String(s || "");
+  return /__BRA__\d+__KET__/.test(v);
+}
+
+function pruneSyntheticHierarchyNodes(root) {
+  function visit(node, isRoot = false) {
+    const nextChildren = [];
+    for (const child of (node.children || [])) {
+      const kept = visit(child, false);
+      nextChildren.push(...kept);
+    }
+    node.children = nextChildren;
+
+    const isSynthetic = isVerilatorSyntheticName(node.name);
+
+    if (!isRoot && isSynthetic) {
+      return node.children;
+    }
+    return [node];
+  }
+
+  const kept = visit(root, true);
+  return kept[0] || root;
+}
+
+// -------------------- XML parsing (extract all info) --------------------
+
+function parseVerilatorXml(xmlDoc) {
+  const root = xmlDoc.querySelector("verilator_xml");
+  if (!root) throw new Error("Not a Verilator XML file (missing <verilator_xml>).");
+
+  // Files registry
+  const files = Array.from(root.querySelectorAll("files > file")).map(f => ({
+    id: attr(f,"id"),
+    filename: attr(f,"filename"),
+    language: attr(f,"language"),
+  }));
+
+  const moduleFiles = Array.from(root.querySelectorAll("module_files > file")).map(f => ({
+    id: attr(f,"id"),
+    filename: attr(f,"filename"),
+    language: attr(f,"language"),
+  }));
+
+  // Cells: elaborated instances (best hierarchy source)
+  // Verilator may nest <cell> nodes recursively under <cells>, so collect all descendants.
+  const cells = Array.from(root.querySelectorAll("cells cell")).map(c => ({
+    loc: attr(c,"loc"),
+    name: attr(c,"name"),              // instance name
+    submodname: attr(c,"submodname"),  // module type
+    hier: attr(c,"hier"),              // full hierarchical path
+  }));
+
+  // Types
+  const typetable = root.querySelector("netlist > typetable");
+  const types = typetable ? Array.from(typetable.children).map(t => ({
+    tag: t.tagName,
+    id: attr(t,"id"),
+    name: attr(t,"name"),
+    left: attr(t,"left"),
+    right: attr(t,"right"),
+    loc: attr(t,"loc"),
+    attrs: Array.from(t.attributes).reduce((o,a)=> (o[a.name]=a.value,o), {}),
+  })) : [];
+
+  const typeById = new Map(types.filter(t=>t.id).map(t => [t.id, t]));
+
+  // Modules and ports/vars
+  const modules = Array.from(root.querySelectorAll("netlist > module")).map(m => {
+    const name = attr(m,"name");
+    const origName = attr(m,"origName");
+    const loc = attr(m,"loc");
+
+    const vars = Array.from(m.querySelectorAll(":scope > var")).map(v => {
+      const dtype_id = attr(v,"dtype_id");
+      const t = typeById.get(dtype_id) || null;
+      return {
+        loc: attr(v,"loc"),
+        name: attr(v,"name"),
+        origName: attr(v,"origName"),
+        vartype: attr(v,"vartype"),
+        dir: attr(v,"dir"), // input/output/inout, or empty for internal vars
+        pinIndex: attr(v,"pinIndex"),
+        dtype_id,
+        dtype: t,
+      };
+    });
+
+    // Always blocks (we keep the raw subtree for "all info" display)
+    const alwaysBlocks = Array.from(m.querySelectorAll(":scope > always")).map((a, i) => ({
+      index: i,
+      loc: attr(a,"loc"),
+      xml: a, // DOM node for later tree viewing
+    }));
+
+    return { name, origName, loc, vars, alwaysBlocks, xml: m };
+  });
+
+  const moduleByName = new Map(modules.map(m => [m.name, m]));
+
+  // Build a hierarchy tree from `cells` using the `hier` path
+  // If cells is empty (can happen on tiny designs), fallback to top module.
+  const hierRoot = buildHierarchyFromCells(cells, moduleByName);
+
+  return {
+    files,
+    moduleFiles,
+    cells,
+    types,
+    modules,
+    hierRoot,
+  };
+}
+
+function buildHierarchyFromCells(cells, moduleByName) {
+  // We build a tree of nodes: { id, name, path, moduleType, children[] }
+  // The Verilator XML gives `hier` like "top.u_core.u_alu" and `name` instance name.
+  // The "top" itself appears as a cell with name="top" hier="top".
+
+  const makeNode = (path, name, moduleType) => ({
+    id: path,
+    name,
+    path,
+    moduleType: moduleType || "",
+    children: [],
+  });
+
+  const rootCandidates = cells.filter(c => c.hier && !c.hier.includes("."));
+  let rootPath = rootCandidates.length ? rootCandidates[0].hier : "top";
+  let rootCell = cells.find(c => c.hier === rootPath) || null;
+  let rootType = rootCell ? rootCell.submodname : (moduleByName.has(rootPath) ? rootPath : "top");
+
+  const root = makeNode(rootPath, rootPath, rootType);
+
+  const nodeMap = new Map([[root.id, root]]);
+
+  function ensureNode(path) {
+    if (nodeMap.has(path)) return nodeMap.get(path);
+    const parts = path.split(".");
+    const name = parts[parts.length-1];
+    // Find cell info if exists
+    const cell = cells.find(c => c.hier === path) || null;
+    const moduleType = cell ? cell.submodname : "";
+    const n = makeNode(path, name, moduleType);
+    nodeMap.set(path, n);
+    return n;
+  }
+
+  // Add all nodes
+  for (const c of cells) {
+    if (!c.hier) continue;
+    ensureNode(c.hier);
+  }
+
+  // Wire parents/children by path segments
+  for (const [path, node] of nodeMap.entries()) {
+    if (path === root.id) continue;
+    const parentPath = path.includes(".") ? path.split(".").slice(0,-1).join(".") : null;
+    if (!parentPath) continue;
+    const parent = ensureNode(parentPath);
+    if (!parent.children.includes(node)) parent.children.push(node);
+  }
+
+  const prunedRoot = pruneSyntheticHierarchyNodes(root);
+
+  // Make sure root is correct: if there’s a single top like "top", keep it.
+  // If rootPath wasn't present, we still keep "top".
+  // Sort children for stable layout
+  (function sortRec(n){
+    n.children.sort((a,b)=>a.name.localeCompare(b.name));
+    for (const ch of n.children) sortRec(ch);
+  })(prunedRoot);
+
+  return prunedRoot;
+}
+
+// -------------------- Diagram rendering --------------------
+
+const svg = d3.select("#diagramSvg");
+let g = svg.append("g").attr("class","viewport");
+let zoom = d3.zoom()
+  .scaleExtent([0.15, 4])
+  .on("zoom", (event) => {
+    g.attr("transform", event.transform);
+  });
+
+svg.call(zoom);
+
+function clearDiagram() {
+  g.selectAll("*").remove();
+  state.selectedId = null;
+  updateSelectedOverlay(null);
+}
+
+function updateSelectedOverlay(node) {
+  if (!node) {
+    els.selName.textContent = "none";
+    els.selType.textContent = "—";
+    els.selPath.textContent = "—";
+    els.selType.className = "pill";
+    els.selPath.className = "pill";
+    return;
+  }
+  els.selName.textContent = node.data.name;
+  els.selType.textContent = node.data.moduleType || "unknown";
+  els.selPath.textContent = node.data.path || node.data.id;
+  els.selType.className = "pill ok";
+  els.selPath.className = "pill";
+}
+
+function updatePortsToggleButton() {
+  els.btnTogglePorts.textContent = state.showPorts ? "Ports: On" : "Ports: Off";
+  els.btnTogglePorts.classList.toggle("primary", state.showPorts);
+}
+
+function updateInfoPanelVisibility() {
+  els.mainLayout.classList.toggle("panel-hidden", !state.showInfoPanel);
+  els.btnToggleInfoPanel.textContent = state.showInfoPanel ? "Hide Panel" : "Show Panel";
+  els.btnToggleInfoPanel.classList.toggle("primary", state.showInfoPanel);
+}
+
+function getPortsForModule(moduleByName, moduleType) {
+  const mod = moduleByName.get(moduleType);
+  if (!mod) return { inputs: [], outputs: [], inouts: [], internals: [] };
+
+  const inputs = mod.vars.filter(v => v.dir === "input");
+  const outputs = mod.vars.filter(v => v.dir === "output");
+  const inouts = mod.vars.filter(v => v.dir === "inout");
+  const internals = mod.vars.filter(v => !v.dir);
+  return { inputs, outputs, inouts, internals };
+}
+
+function packChildrenInRows(children, targetWidth, gapX, gapY) {
+  const placements = [];
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  let usedW = 0;
+
+  for (const child of children) {
+    const cw = child.data._w;
+    const ch = child.data._h;
+    if (x > 0 && (x + cw) > targetWidth) {
+      x = 0;
+      y += rowH + gapY;
+      rowH = 0;
+    }
+    placements.push({ child, x, y });
+    x += cw + gapX;
+    rowH = Math.max(rowH, ch);
+    usedW = Math.max(usedW, x - gapX);
+  }
+
+  const usedH = placements.length ? (y + rowH) : 0;
+  return { placements, usedW, usedH };
+}
+
+function renderHierarchyDiagram(parsed) {
+  clearDiagram();
+
+  const root = d3.hierarchy(parsed.hierRoot);
+  const moduleByName = new Map(parsed.modules.map(m => [m.name, m]));
+  const minNodeWidth = 260;
+  const nodePadding = 10;
+  const childInset = 12;
+  const gapX = 12;
+  const gapY = 12;
+  const portLineH = 14;
+  const maxVisiblePorts = 8;
+
+  function computeLayout(d) {
+    const ports = getPortsForModule(moduleByName, d.data.moduleType);
+    const mod = moduleByName.get(d.data.moduleType) || null;
+    const signalNames = mod ? mod.vars.map(v => `${v.name || ""} ${v.origName || ""}`).join(" ") : "";
+    d.data._searchHay = `${d.data.name || ""} ${d.data.moduleType || ""} ${d.data.path || ""} ${signalNames}`.toLowerCase();
+    d.data._ports = ports;
+
+    const visiblePortRows = state.showPorts
+      ? Math.max(
+          Math.min(ports.inputs.length, maxVisiblePorts),
+          Math.min(ports.outputs.length, maxVisiblePorts),
+          1
+        )
+      : 1;
+    const titleBlockH = 42;
+    const ownContentH = titleBlockH + visiblePortRows * portLineH + 8;
+    d.data._ownContentH = ownContentH;
+
+    if (!d.children || d.children.length === 0) {
+      d.data._w = minNodeWidth;
+      d.data._h = ownContentH + nodePadding;
+      return;
+    }
+
+    d.children.forEach(computeLayout);
+    const childArea = d.children.reduce((acc, c) => acc + (c.data._w * c.data._h), 0);
+    const widestChild = d3.max(d.children, c => c.data._w) || minNodeWidth;
+    const targetWidth = Math.max(widestChild, Math.min(1600, Math.max(360, Math.sqrt(childArea) * 1.45)));
+    const packed = packChildrenInRows(d.children, targetWidth, gapX, gapY);
+
+    packed.placements.forEach(p => {
+      p.child.data._relX = childInset + p.x;
+      p.child.data._relY = ownContentH + childInset + p.y;
+    });
+
+    d.data._w = Math.max(minNodeWidth, packed.usedW + childInset * 2);
+    d.data._h = ownContentH + childInset + packed.usedH + childInset;
+  }
+
+  function assignAbsolute(d, absX, absY) {
+    d.data._x = absX;
+    d.data._y = absY;
+    (d.children || []).forEach(ch => {
+      assignAbsolute(ch, absX + ch.data._relX, absY + ch.data._relY);
+    });
+  }
+
+  computeLayout(root);
+  assignAbsolute(root, 0, 0);
+
+  // Nodes
+  const nodes = g.append("g")
+    .attr("class", "nodes")
+    .selectAll("g")
+    .data(root.descendants())
+    .join("g")
+    .attr("class", "node")
+    .attr("transform", d => `translate(${d.data._x},${d.data._y})`)
+    .style("cursor","pointer")
+    .on("click", (event, d) => {
+      event.stopPropagation();
+      state.selectedId = d.data.id;
+      updateSelectedOverlay(d);
+      renderPanel(); // show details
+      highlightSearch(els.searchInput.value.trim());
+    });
+
+  nodes.append("rect")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("width", d => d.data._w)
+    .attr("height", d => d.data._h);
+
+  nodes.append("text")
+    .attr("class","title")
+    .attr("x", 10)
+    .attr("y", 16)
+    .text(d => d.data.name);
+
+  nodes.append("text")
+    .attr("class","sub")
+    .attr("x", 10)
+    .attr("y", 32)
+    .text(d => `${d.data.moduleType || "unknown"}`);
+
+  nodes.each(function(d) {
+    if (!state.showPorts) return;
+
+    const ports = d.data._ports;
+    const xLeft = 10;
+    const xRight = d.data._w - 10;
+    const portY0 = 50;
+
+    // Inputs on left
+    d3.select(this).selectAll(null)
+      .data(ports.inputs.slice(0, maxVisiblePorts))
+      .join("text")
+      .attr("class", "port")
+      .attr("x", xLeft)
+      .attr("y", (p, i) => portY0 + i*14)
+      .text(p => `◀ ${p.name}`);
+
+    // Outputs on right
+    d3.select(this).selectAll(null)
+      .data(ports.outputs.slice(0, maxVisiblePorts))
+      .join("text")
+      .attr("class", "port")
+      .attr("text-anchor", "end")
+      .attr("x", xRight)
+      .attr("y", (p, i) => portY0 + i*14)
+      .text(p => `${p.name} ▶`);
+  });
+
+  // Background click clears selection
+  svg.on("click", () => {
+    state.selectedId = null;
+    updateSelectedOverlay(null);
+    renderPanel();
+    highlightSearch(els.searchInput.value.trim());
+  });
+
+  // Stats pills
+  const nodeCount = root.descendants().length;
+  const linkCount = Math.max(0, nodeCount - 1);
+  let portCount = 0;
+  root.descendants().forEach(d => {
+    const p = d.data._ports;
+    portCount += (p.inputs.length + p.outputs.length + p.inouts.length);
+  });
+
+  els.pillNodes.textContent = `nodes: ${nodeCount}`;
+  els.pillLinks.textContent = `links: ${linkCount}`;
+  els.pillPorts.textContent = `ports: ${portCount}`;
+
+  // Fit to view on first render
+  fitToDiagram();
+}
+
+function fitToDiagram() {
+  const bounds = g.node().getBBox();
+  const svgEl = svg.node();
+  const width = svgEl.clientWidth;
+  const height = svgEl.clientHeight;
+  if (!bounds.width || !bounds.height) return;
+
+  const pad = 40;
+  const scale = Math.min(
+    3.5,
+    Math.max(0.15, Math.min((width - pad) / bounds.width, (height - pad) / bounds.height))
+  );
+
+  const tx = (width / 2) - scale * (bounds.x + bounds.width / 2);
+  const ty = (height / 2) - scale * (bounds.y + bounds.height / 2);
+
+  svg.transition().duration(350).call(
+    zoom.transform,
+    d3.zoomIdentity.translate(tx, ty).scale(scale)
+  );
+}
+
+function resetZoom() {
+  svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity);
+}
+
+// -------------------- Search highlight --------------------
+
+function highlightSearch(q) {
+  q = (q || "").toLowerCase();
+  const nodeSel = g.selectAll(".node");
+  const linkSel = g.selectAll(".link");
+
+  if (!q) {
+    nodeSel.select("rect")
+      .style("stroke", "rgba(124,196,255,0.35)")
+      .style("stroke-width", "1.2px");
+    linkSel.classed("highlight", false);
+    els.status.textContent = state.parsed ? "Loaded" : "No file loaded";
+    return;
+  }
+
+  const matchedIds = new Set();
+  nodeSel.each(function(d) {
+    const hay = d.data._searchHay || `${d.data.name} ${d.data.moduleType} ${d.data.path}`.toLowerCase();
+    const hit = hay.includes(q);
+    d3.select(this).select("rect")
+      .style("stroke", hit ? "rgba(163,255,204,0.95)" : "rgba(255,255,255,0.12)")
+      .style("stroke-width", hit ? "2.6px" : "1.2px");
+    if (hit) matchedIds.add(d.data.id);
+  });
+
+  linkSel.each(function(d) {
+    const sid = d && d.source && d.source.data ? d.source.data.id : null;
+    const tid = d && d.target && d.target.data ? d.target.data.id : null;
+    const hit = (sid && matchedIds.has(sid)) || (tid && matchedIds.has(tid));
+    d3.select(this).classed("highlight", hit);
+  });
+
+  if (matchedIds.size === 0) {
+    els.status.textContent = "Nothing found";
+  } else {
+    els.status.textContent = `Loaded • ${matchedIds.size} match${matchedIds.size === 1 ? "" : "es"}`;
+  }
+}
+
+// -------------------- UI: Panel rendering (displays ALL info) --------------------
+
+function renderPanel() {
+  const parsed = state.parsed;
+  const tab = state.activeTab;
+
+  if (!parsed) {
+    els.panelBody.innerHTML = `
+      <div class="hint">
+        <p><strong>Upload</strong> the XML produced by:</p>
+        <pre>verilator --xml-only top.sv</pre>
+        <p>This viewer will render a zoomable hierarchy diagram and display all XML information (raw + tree + extracted tables).</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (tab === "summary") {
+    els.panelBody.innerHTML = renderSummary(parsed);
+  } else if (tab === "tables") {
+    els.panelBody.innerHTML = renderTables(parsed);
+  } else if (tab === "xmltree") {
+    els.panelBody.innerHTML = renderXmlTree(state.xmlDoc.documentElement);
+  }
+
+  // If a node is selected, show node details appended in summary/tables
+  if (state.selectedId && (tab === "summary" || tab === "tables")) {
+    const extra = renderSelectedDetails(parsed, state.selectedId);
+    if (extra) {
+      const div = document.createElement("div");
+      div.innerHTML = extra;
+      els.panelBody.prepend(div);
+    }
+  }
+}
+
+function renderSummary(parsed) {
+  const top = parsed.hierRoot;
+  const filesCount = parsed.files.length;
+  const moduleCount = parsed.modules.length;
+  const cellCount = parsed.cells.length;
+  const typeCount = parsed.types.length;
+
+  const moduleByName = new Map(parsed.modules.map(m => [m.name, m]));
+  const topModule = moduleByName.get(top.moduleType) || moduleByName.get("top") || parsed.modules[0] || null;
+
+  const topPorts = topModule ? {
+    inputs: topModule.vars.filter(v=>v.dir==="input").length,
+    outputs: topModule.vars.filter(v=>v.dir==="output").length,
+    inouts: topModule.vars.filter(v=>v.dir==="inout").length,
+    internals: topModule.vars.filter(v=>!v.dir).length,
+  } : {inputs:0,outputs:0,inouts:0,internals:0};
+
+  return `
+    <div class="hint">
+      <p><strong>What you’re looking at</strong></p>
+      <p>
+        The diagram is built from <code>&lt;cells&gt;</code> (hierarchy instances) and module port lists from
+        <code>&lt;netlist&gt;&lt;module&gt;&lt;var dir="..."&gt;</code>.
+      </p>
+      <p>
+        Click any block to inspect its ports, source locations, and raw XML subtree.
+      </p>
+    </div>
+
+    <div class="section-title">Design Summary</div>
+    <div class="kv">
+      <div>Top path</div><div>${escapeHtml(parsed.hierRoot.path)}</div>
+      <div>Top module type</div><div>${escapeHtml(parsed.hierRoot.moduleType || "unknown")}</div>
+      <div>Files</div><div>${filesCount}</div>
+      <div>Modules</div><div>${moduleCount}</div>
+      <div>Cells (instances)</div><div>${cellCount}</div>
+      <div>Types</div><div>${typeCount}</div>
+      <div>Top ports</div><div>in:${topPorts.inputs} out:${topPorts.outputs} inout:${topPorts.inouts} internal:${topPorts.internals}</div>
+    </div>
+
+    <div class="section-title">Tips</div>
+    <div class="hint">
+      <ul>
+        <li><strong>Zoom</strong> with trackpad/mouse wheel, <strong>pan</strong> by dragging the background.</li>
+        <li>Use the <strong>search</strong> box to highlight instances/modules quickly.</li>
+        <li>Use <strong>Tables</strong> and <strong>XML Tree</strong> to browse the full XML content.</li>
+      </ul>
+    </div>
+  `;
+}
+
+function renderTables(parsed) {
+  const filesTable = `
+    <div class="section-title">Files</div>
+    ${table(["id","filename","language"], parsed.files)}
+  `;
+
+  const moduleFilesTable = `
+    <div class="section-title">Module Files</div>
+    ${table(["id","filename","language"], parsed.moduleFiles)}
+  `;
+
+  const cellsTable = `
+    <div class="section-title">Cells (Hierarchy Instances)</div>
+    ${table(["hier","name","submodname","loc"], parsed.cells)}
+  `;
+
+  const typesTable = `
+    <div class="section-title">Type Table</div>
+    ${table(["id","tag","name","left","right","loc"], parsed.types)}
+  `;
+
+  // Modules overview
+  const modulesOverview = parsed.modules.map(m => {
+    const ins = m.vars.filter(v=>v.dir==="input").length;
+    const outs = m.vars.filter(v=>v.dir==="output").length;
+    const inouts = m.vars.filter(v=>v.dir==="inout").length;
+    const ints = m.vars.filter(v=>!v.dir).length;
+    return {
+      name: m.name,
+      origName: m.origName,
+      loc: m.loc,
+      ports: `in:${ins} out:${outs} inout:${inouts}`,
+      internals: ints,
+      always: m.alwaysBlocks.length
+    };
+  });
+
+  const modulesTable = `
+    <div class="section-title">Modules</div>
+    ${table(["name","origName","ports","internals","always","loc"], modulesOverview)}
+  `;
+
+  return filesTable + moduleFilesTable + cellsTable + modulesTable + typesTable;
+}
+
+function table(cols, rows) {
+  if (!rows || rows.length === 0) {
+    return `<div class="hint">No entries.</div>`;
+  }
+  const thead = `<thead><tr>${cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
+  const tbody = `<tbody>${
+    rows.map(r => `<tr>${cols.map(c=>`<td>${escapeHtml(String(r[c] ?? ""))}</td>`).join("")}</tr>`).join("")
+  }</tbody>`;
+  return `<table>${thead}${tbody}</table>`;
+}
+
+function svWidth(dtype) {
+  if (!dtype) return "";
+  const hasLeft = dtype.left !== undefined && dtype.left !== "";
+  const hasRight = dtype.right !== undefined && dtype.right !== "";
+  if (!hasLeft && !hasRight) return "";
+  if (hasLeft && hasRight) return `[${dtype.left}:${dtype.right}]`;
+  return `[${hasLeft ? dtype.left : ""}:${hasRight ? dtype.right : ""}]`;
+}
+
+function sortVarsForDisplay(vars) {
+  return [...vars].sort((a, b) => {
+    const ai = Number.parseInt(a.pinIndex || "", 10);
+    const bi = Number.parseInt(b.pinIndex || "", 10);
+    const aHasPin = Number.isFinite(ai);
+    const bHasPin = Number.isFinite(bi);
+    if (aHasPin && bHasPin && ai !== bi) return ai - bi;
+    if (aHasPin !== bHasPin) return aHasPin ? -1 : 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+}
+
+function svDecl(v, includeDir) {
+  const dir = includeDir && v.dir ? `${v.dir} ` : "";
+  const baseType = v.vartype || (v.dtype && v.dtype.name) || "logic";
+  const width = svWidth(v.dtype);
+  const name = v.origName || v.name || "unnamed";
+  return `${dir}${baseType}${width ? ` ${width}` : ""} ${name}`;
+}
+
+function renderSystemVerilogForModule(mod) {
+  if (!mod) return "// Module metadata not found in parsed XML.";
+
+  const ports = sortVarsForDisplay(mod.vars.filter(v => v.dir));
+  const internals = sortVarsForDisplay(mod.vars.filter(v => !v.dir));
+  const lines = [];
+  const moduleName = mod.origName || mod.name || "unknown_module";
+
+  lines.push(`module ${moduleName} (`);
+  if (ports.length === 0) {
+    lines.push(");");
+  } else {
+    ports.forEach((p, idx) => {
+      lines.push(`  ${svDecl(p, true)}${idx < ports.length - 1 ? "," : ""}`);
+    });
+    lines.push(");");
+  }
+
+  if (internals.length) {
+    lines.push("");
+    internals.forEach(v => lines.push(`  ${svDecl(v, false)};`));
+  }
+
+  if (mod.alwaysBlocks.length) {
+    lines.push("");
+    lines.push("  // Always blocks discovered in Verilator XML.");
+    lines.push("  // Behavioral body reconstruction is not available from this metadata alone.");
+    mod.alwaysBlocks.forEach((a, i) => {
+      lines.push(`  // always block ${i + 1} loc=${a.loc || "unknown"}`);
+    });
+  }
+
+  lines.push("");
+  lines.push("endmodule");
+  return lines.join("\n");
+}
+
+function renderSelectedDetails(parsed, selectedId) {
+  // Find node in hierarchy
+  function findNode(n, id) {
+    if (n.id === id) return n;
+    for (const ch of (n.children || [])) {
+      const hit = findNode(ch, id);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const n = findNode(parsed.hierRoot, selectedId);
+  if (!n) return "";
+
+  const moduleByName = new Map(parsed.modules.map(m => [m.name, m]));
+  const mod = moduleByName.get(n.moduleType) || null;
+  const ports = mod ? {
+    inputs: mod.vars.filter(v=>v.dir==="input"),
+    outputs: mod.vars.filter(v=>v.dir==="output"),
+    inouts: mod.vars.filter(v=>v.dir==="inout"),
+    internals: mod.vars.filter(v=>!v.dir),
+  } : {inputs:[],outputs:[],inouts:[],internals:[]};
+
+  const portRows = (arr) => arr.map(v => ({
+    name: v.name,
+    dir: v.dir || "",
+    vartype: v.vartype || "",
+    dtype_id: v.dtype_id || "",
+    width: v.dtype && (v.dtype.left || v.dtype.right) ? `[${v.dtype.left}:${v.dtype.right}]` : "",
+    loc: v.loc || ""
+  }));
+
+  const moduleSv = renderSystemVerilogForModule(mod);
+  const cell = parsed.cells.find(c => c.hier === n.path) || null;
+
+  return `
+    <div class="section-title">Selected Block</div>
+    <div class="kv">
+      <div>Instance</div><div>${escapeHtml(n.name)}</div>
+      <div>Module type</div><div>${escapeHtml(n.moduleType || "unknown")}</div>
+      <div>Hierarchy path</div><div>${escapeHtml(n.path)}</div>
+      <div>Cell loc</div><div>${escapeHtml(cell ? cell.loc : "")}</div>
+      <div>Module loc</div><div>${escapeHtml(mod ? mod.loc : "")}</div>
+    </div>
+
+    <div class="section-title">Ports (Inputs)</div>
+    ${table(["name","dir","vartype","width","dtype_id","loc"], portRows(ports.inputs))}
+
+    <div class="section-title">Ports (Outputs)</div>
+    ${table(["name","dir","vartype","width","dtype_id","loc"], portRows(ports.outputs))}
+
+    <div class="section-title">Ports (Inouts)</div>
+    ${table(["name","dir","vartype","width","dtype_id","loc"], portRows(ports.inouts))}
+
+    <div class="section-title">Internal Vars (Top-level only in XML)</div>
+    <div class="hint">Verilator XML lists vars declared in that module scope (ports + internals). Showing internals here can be noisy on big modules.</div>
+    ${table(["name","dir","vartype","width","dtype_id","loc"], portRows(ports.internals.slice(0, 200)))}
+
+    <div class="section-title">SystemVerilog (Reconstructed)</div>
+    <div class="hint">Generated from module metadata in Verilator XML (ports/vars/always metadata).</div>
+    <pre>${escapeHtml(moduleSv)}</pre>
+  `;
+}
+
+function renderXmlTree(rootEl) {
+  // Build a collapsible tree with <details>
+  // NOTE: Large XML will be big; this is intentionally simple.
+  function nodeToHtml(el, depth=0) {
+    if (!(el instanceof Element)) return "";
+    const attrs = Array.from(el.attributes).map(a => `${a.name}="${a.value}"`).join(" ");
+    const label = attrs ? `<${el.tagName} ${escapeHtml(attrs)}>` : `<${el.tagName}>`;
+
+    const children = Array.from(el.childNodes).filter(n => n.nodeType === 1); // Elements only
+    const textNodes = Array.from(el.childNodes).filter(n => n.nodeType === 3 && n.textContent.trim().length);
+    const text = textNodes.length ? textNodes.map(n=>escapeHtml(n.textContent.trim())).join(" ") : "";
+
+    if (children.length === 0) {
+      return `
+        <details>
+          <summary>${escapeHtml(label)}</summary>
+          <div class="xml-node">
+            ${text ? `<div>text: <span>${text}</span></div>` : `<div>(no children)</div>`}
+          </div>
+        </details>
+      `;
+    }
+
+    return `
+      <details ${depth < 1 ? "open" : ""}>
+        <summary>${escapeHtml(label)}</summary>
+        <div class="xml-node">
+          ${text ? `<div>text: <span>${text}</span></div>` : ""}
+          ${children.map(ch => nodeToHtml(ch, depth+1)).join("")}
+        </div>
+      </details>
+    `;
+  }
+
+  return `
+    <div class="hint">
+      Collapsible view of the full XML DOM. For huge designs, use the <strong>Tables</strong> tab for faster navigation.
+    </div>
+    <div class="section-title">XML Tree</div>
+    ${nodeToHtml(rootEl, 0)}
+  `;
+}
+
+// -------------------- File loading --------------------
+
+async function loadXmlText(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, "application/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) {
+    throw new Error("XML parse error: " + parseError.textContent.trim());
+  }
+
+  const parsed = parseVerilatorXml(doc);
+
+  state.rawXmlText = xmlText;
+  state.xmlDoc = doc;
+  state.parsed = parsed;
+
+  els.status.textContent = "Loaded";
+  els.pillLoaded.textContent = "loaded";
+  els.pillLoaded.className = "pill ok";
+
+  // Render diagram + panel
+  renderHierarchyDiagram(parsed);
+  renderPanel();
+  highlightSearch(els.searchInput.value.trim());
+}
+
+function setNotLoaded(msg) {
+  els.status.textContent = msg || "No file loaded";
+  els.pillLoaded.textContent = "not loaded";
+  els.pillLoaded.className = "pill bad";
+  els.pillNodes.textContent = "nodes: 0";
+  els.pillLinks.textContent = "links: 0";
+  els.pillPorts.textContent = "ports: 0";
+}
+
+els.btnLoad.addEventListener("click", () => els.fileInput.click());
+els.fileInput.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    await loadXmlText(text);
+  } catch (err) {
+    console.error(err);
+    alert(String(err.message || err));
+    state.parsed = null;
+    state.xmlDoc = null;
+    state.rawXmlText = "";
+    clearDiagram();
+    setNotLoaded("Load failed");
+    renderPanel();
+  } finally {
+    els.fileInput.value = "";
+  }
+});
+
+els.btnFit.addEventListener("click", fitToDiagram);
+els.btnResetZoom.addEventListener("click", resetZoom);
+els.btnToggleInfoPanel.addEventListener("click", () => {
+  state.showInfoPanel = !state.showInfoPanel;
+  updateInfoPanelVisibility();
+  requestAnimationFrame(() => {
+    if (state.parsed) fitToDiagram();
+  });
+});
+els.btnTogglePorts.addEventListener("click", () => {
+  state.showPorts = !state.showPorts;
+  updatePortsToggleButton();
+  if (state.parsed) {
+    renderHierarchyDiagram(state.parsed);
+    highlightSearch(els.searchInput.value.trim());
+  }
+});
+
+els.searchInput.addEventListener("input", (e) => {
+  highlightSearch(e.target.value.trim());
+});
+
+els.searchInput.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  highlightSearch(els.searchInput.value.trim());
+});
+
+window.addEventListener("resize", () => {
+  if (!state.parsed) return;
+  fitToDiagram();
+});
+
+// Tabs
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    state.activeTab = t.dataset.tab;
+    renderPanel();
+  });
+});
+
+// Initial render
+setNotLoaded("No file loaded");
+updatePortsToggleButton();
+updateInfoPanelVisibility();
+renderPanel();
+</script>
+</body>
+</html>
