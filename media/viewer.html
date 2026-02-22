@@ -422,7 +422,6 @@
 const vscode = (typeof acquireVsCodeApi === "function") ? acquireVsCodeApi() : null;
 
 const state = {
-  rawXmlText: "",
   xmlDoc: null,
   parsed: null,     // extracted structure
   selectedId: null,
@@ -433,7 +432,6 @@ const state = {
 
 const els = {
   mainLayout: document.getElementById("mainLayout"),
-  leftPanel: document.getElementById("leftPanel"),
   fileInput: document.getElementById("fileInput"),
   btnLoad: document.getElementById("btnLoad"),
   btnToggleInfoPanel: document.getElementById("btnToggleInfoPanel"),
@@ -454,10 +452,6 @@ const els = {
 
 // -------------------- Helpers --------------------
 
-function textContent(el) {
-  return el ? (el.textContent || "").trim() : "";
-}
-
 function attr(el, name, def="") {
   return el ? (el.getAttribute(name) ?? def) : def;
 }
@@ -469,10 +463,6 @@ function escapeHtml(s) {
     .replaceAll(">","&gt;")
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#39;");
-}
-
-function unique(arr) {
-  return Array.from(new Set(arr));
 }
 
 function toPosInt(value, fallback = 1) {
@@ -488,16 +478,6 @@ function parseLoc(loc) {
     line: toPosInt(parts[1], 1),
     column: toPosInt(parts[2], 1),
   };
-}
-
-function by(obj, keyFn) {
-  const m = new Map();
-  for (const x of obj) {
-    const k = keyFn(x);
-    if (!m.has(k)) m.set(k, []);
-    m.get(k).push(x);
-  }
-  return m;
 }
 
 function isVerilatorSyntheticName(s) {
@@ -622,6 +602,8 @@ function buildHierarchyFromCells(cells, moduleByName) {
   // The Verilator XML gives `hier` like "top.u_core.u_alu" and `name` instance name.
   // The "top" itself appears as a cell with name="top" hier="top".
 
+  const cellByHier = new Map(cells.filter(c => c.hier).map(c => [c.hier, c]));
+
   const makeNode = (path, name, moduleType) => ({
     id: path,
     name,
@@ -632,8 +614,8 @@ function buildHierarchyFromCells(cells, moduleByName) {
 
   const rootCandidates = cells.filter(c => c.hier && !c.hier.includes("."));
   let rootPath = rootCandidates.length ? rootCandidates[0].hier : "top";
-  let rootCell = cells.find(c => c.hier === rootPath) || null;
-  let rootType = rootCell ? rootCell.submodname : (moduleByName.has(rootPath) ? rootPath : "top");
+  const rootCell = cellByHier.get(rootPath) || null;
+  const rootType = rootCell ? rootCell.submodname : (moduleByName.has(rootPath) ? rootPath : "top");
 
   const root = makeNode(rootPath, rootPath, rootType);
 
@@ -644,7 +626,7 @@ function buildHierarchyFromCells(cells, moduleByName) {
     const parts = path.split(".");
     const name = parts[parts.length-1];
     // Find cell info if exists
-    const cell = cells.find(c => c.hier === path) || null;
+    const cell = cellByHier.get(path) || null;
     const moduleType = cell ? cell.submodname : "";
     const n = makeNode(path, name, moduleType);
     nodeMap.set(path, n);
@@ -1326,8 +1308,6 @@ async function loadXmlText(xmlText) {
   }
 
   const parsed = parseVerilatorXml(doc);
-
-  state.rawXmlText = xmlText;
   state.xmlDoc = doc;
   state.parsed = parsed;
 
@@ -1362,7 +1342,6 @@ els.fileInput.addEventListener("change", async (e) => {
     alert(String(err.message || err));
     state.parsed = null;
     state.xmlDoc = null;
-    state.rawXmlText = "";
     clearDiagram();
     setNotLoaded("Load failed");
     renderPanel();

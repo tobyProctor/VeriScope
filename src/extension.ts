@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     );
 
-    panel.webview.html = await buildWebviewHtml(context, panel.webview);
+    panel.webview.html = await buildWebviewHtml(context);
 
     panel.webview.onDidReceiveMessage(async (msg: OpenLocationMessage) => {
       if (msg?.type !== "openLocation") {
@@ -51,7 +51,7 @@ export function deactivate() {
   // no-op
 }
 
-async function buildWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webview): Promise<string> {
+async function buildWebviewHtml(context: vscode.ExtensionContext): Promise<string> {
   const viewerPath = path.join(context.extensionPath, "media", "viewer.html");
   const raw = await fs.readFile(viewerPath, "utf8");
   let html = raw;
