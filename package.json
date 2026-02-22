@@ -1,13 +1,31 @@
 {
-  "name": "block-diagram-viewer",
-  "displayName": "Block Diagram Viewer",
-  "description": "View Verilator XML hierarchy diagrams and jump to source in VS Code.",
-  "version": "0.0.1",
-  "publisher": "local",
+  "name": "veriscope",
+  "displayName": "VeriScope",
+  "description": "Visualize Verilator XML hierarchy as an interactive schematic and jump directly to SystemVerilog source.",
+  "version": "0.1.0",
+  "publisher": "tobyproctor",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tobyProctor/VeriScope.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tobyProctor/VeriScope/issues"
+  },
+  "homepage": "https://github.com/tobyProctor/VeriScope#readme",
+  "keywords": [
+    "verilator",
+    "systemverilog",
+    "rtl",
+    "netlist",
+    "schematic",
+    "hardware"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
+    "Visualization",
     "Other"
   ],
   "activationEvents": [
@@ -18,20 +36,20 @@
     "commands": [
       {
         "command": "blockDiagram.openSchematic",
-        "title": "Block Diagram: Open Schematic"
+        "title": "VeriScope: Open Schematic"
       }
     ],
     "configuration": {
-      "title": "Block Diagram",
+      "title": "VeriScope",
       "properties": {
         "blockDiagram.xmlPath": {
           "type": "string",
-          "default": "/Users/tobyproctor/Documents/GitHub/verilator/work/example/verilator_example/obj_dir/Vtop.xml",
+          "default": "",
           "markdownDescription": "Path to the Verilator XML file. Relative paths are resolved from the first workspace folder."
         },
         "blockDiagram.sourceRoot": {
           "type": "string",
-          "default": "/Users/tobyproctor/Documents/GitHub/verilator/work/example/verilator_example",
+          "default": "",
           "markdownDescription": "Root directory for SystemVerilog sources used to resolve XML file entries like top.sv."
         }
       }
